@@ -1,6 +1,11 @@
 "use client"
 
 import type React from "react"
+<<<<<<< HEAD
+=======
+
+import { useState } from "react"
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,7 +15,10 @@ import { Download, FileText, DollarSign, Trash2 } from "lucide-react"
 import { format } from "date-fns"
 import jsPDF from "jspdf"
 import { Label } from "@/components/ui/label"
+<<<<<<< HEAD
 import { supabase } from "@/lib/supabase"
+=======
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
 
 interface InvoiceProject {
   id: string
@@ -27,6 +35,7 @@ interface InvoiceProject {
   addedToInvoiceAt?: Date
 }
 
+<<<<<<< HEAD
 interface ExportedInvoice {
   id: string
   invoiceNumber: string
@@ -38,16 +47,24 @@ interface ExportedInvoice {
   projects: InvoiceProject[]
 }
 
+=======
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
 interface InvoiceManagerProps {
   invoiceProjects: { [brand: string]: InvoiceProject[] }
   setInvoiceProjects: React.Dispatch<React.SetStateAction<{ [brand: string]: InvoiceProject[] }>>
   onClearInvoiceHistory: (brand: string, count: number) => void
+<<<<<<< HEAD
   exportedInvoices: { [brand: string]: ExportedInvoice[] }
   setExportedInvoices: React.Dispatch<React.SetStateAction<{ [brand: string]: ExportedInvoice[] }>>
   onDeleteProject: (brand: string, projectId: string, projectTitle: string) => void
   invoiceNumbers: { [brand: string]: number }
   setInvoiceNumbers: React.Dispatch<React.SetStateAction<{ [brand: string]: number }>>
   onReloadData: () => Promise<void>
+=======
+  exportedInvoices: { [brand: string]: any[] }
+  setExportedInvoices: React.Dispatch<React.SetStateAction<{ [brand: string]: any[] }>>
+  onDeleteProject: (brand: string, projectId: string, projectTitle: string) => void
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
 }
 
 const brandColors = {
@@ -69,14 +86,25 @@ export function InvoiceManager({
   exportedInvoices,
   setExportedInvoices,
   onDeleteProject,
+<<<<<<< HEAD
   invoiceNumbers,
   setInvoiceNumbers,
   onReloadData,
 }: InvoiceManagerProps) {
+=======
+}: InvoiceManagerProps) {
+  const [invoiceNumbers, setInvoiceNumbers] = useState<{ [brand: string]: number }>({
+    "Wami Live": 1,
+    "Luck On Fourth": 1,
+    "The Hideout": 1,
+  })
+
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
   const getBrandTotal = (brand: string) => {
     return invoiceProjects[brand]?.reduce((sum, project) => sum + (project.invoicePrice || 0), 0) || 0
   }
 
+<<<<<<< HEAD
   const toggleInvoicePaid = async (brand: string, invoiceId: string) => {
     try {
       // Find the current invoice
@@ -109,6 +137,25 @@ export function InvoiceManager({
     }
   }
 
+=======
+  const removeFromInvoice = (brand: string, projectId: string) => {
+    const project = invoiceProjects[brand]?.find((p) => p.id === projectId)
+    if (project) {
+      onDeleteProject(brand, projectId, project.title)
+    }
+  }
+
+  const toggleInvoicePaid = (brand: string, invoiceId: string) => {
+    setExportedInvoices((prev) => ({
+      ...prev,
+      [brand]: prev[brand].map((invoice) =>
+        invoice.id === invoiceId ? { ...invoice, isPaid: !invoice.isPaid } : invoice,
+      ),
+    }))
+    toast.success("Invoice payment status updated")
+  }
+
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
   const clearInvoiceHistory = (brand: string) => {
     const invoiceCount = exportedInvoices[brand]?.length || 0
 
@@ -120,13 +167,18 @@ export function InvoiceManager({
     onClearInvoiceHistory(brand, invoiceCount)
   }
 
+<<<<<<< HEAD
   const generateInvoicePDF = async (brand: string) => {
+=======
+  const generateInvoicePDF = (brand: string) => {
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
     const projects = invoiceProjects[brand]
     if (!projects || projects.length === 0) {
       toast.error("No projects to invoice")
       return
     }
 
+<<<<<<< HEAD
     try {
       const doc = new jsPDF()
       const currentDate = new Date()
@@ -278,6 +330,146 @@ export function InvoiceManager({
     }
   }
 
+=======
+    const doc = new jsPDF()
+    const currentDate = new Date()
+    const invoiceNumber = invoiceNumbers[brand].toString().padStart(3, "0")
+
+    // Header
+    doc.setFontSize(20)
+    doc.setFont("helvetica", "bold")
+    doc.text("INVOICE", 20, 30)
+
+    // Invoice details
+    doc.setFontSize(12)
+    doc.setFont("helvetica", "normal")
+    doc.text(`Invoice #: ${invoiceNumber}`, 20, 45)
+    doc.text(`Date: ${format(currentDate, "MM/dd/yyyy")}`, 20, 55)
+
+    // From section - simplified
+    doc.setFont("helvetica", "bold")
+    doc.text("FROM:", 20, 75)
+    doc.setFont("helvetica", "normal")
+    doc.text("Julio Aleman", 20, 85)
+    doc.text("Graphic Design Services", 20, 95)
+
+    // To section
+    doc.setFont("helvetica", "bold")
+    doc.text("BILL TO:", 120, 75)
+    doc.setFont("helvetica", "normal")
+    doc.text(brandClients[brand as keyof typeof brandClients], 120, 85)
+
+    // Projects table
+    let yPos = 130
+    doc.setFont("helvetica", "bold")
+    doc.text("Description", 20, yPos)
+    doc.text("Type", 100, yPos)
+    doc.text("Amount", 150, yPos)
+
+    // Table line
+    doc.line(20, yPos + 5, 190, yPos + 5)
+    yPos += 15
+
+    doc.setFont("helvetica", "normal")
+    let total = 0
+
+    projects.forEach((project) => {
+      const price = project.invoicePrice || 0
+      total += price
+
+      // Truncate long titles
+      const title = project.title.length > 30 ? project.title.substring(0, 30) + "..." : project.title
+
+      doc.text(title, 20, yPos)
+      doc.text(project.type, 100, yPos)
+      doc.text(`$${price.toFixed(2)}`, 150, yPos)
+      yPos += 10
+
+      // Add new page if needed
+      if (yPos > 250) {
+        doc.addPage()
+        yPos = 30
+      }
+    })
+
+    // Total
+    yPos += 10
+    doc.line(140, yPos, 190, yPos)
+    yPos += 10
+    doc.setFont("helvetica", "bold")
+    doc.text(`TOTAL: $${total.toFixed(2)}`, 140, yPos)
+
+    // Payment info only
+    yPos += 30
+    doc.setFont("helvetica", "bold")
+    doc.text("PAYMENT INFORMATION:", 20, yPos)
+    doc.setFont("helvetica", "normal")
+    yPos += 10
+    doc.text("Zelle: (630) 270-9307", 20, yPos)
+    yPos += 10
+    doc.text("PayPal: Julioaseves@gmail.com", 20, yPos)
+
+    // Save PDF with new naming format
+    const brandName = brand
+      .replace(/\s+/g, "_")
+      .replace("Luck_On_Fourth", "LUCK_ON_FOURTH")
+      .replace("Wami_Live", "WAMI_LIVE")
+      .replace("The_Hideout", "THE_HIDEOUT")
+    const fileName = `${brandName}_Invoice_${format(currentDate, "M-dd-yy")}.pdf`
+
+    // Track exported invoice
+    const exportedInvoice = {
+      id: Date.now().toString(),
+      invoiceNumber,
+      fileName,
+      totalAmount: total,
+      exportedAt: currentDate,
+      isPaid: false,
+      projects: [...projects],
+    }
+
+    setExportedInvoices((prev) => ({
+      ...prev,
+      [brand]: [...prev[brand], exportedInvoice],
+    }))
+    doc.save(fileName)
+
+    // Update invoice number and clear projects
+    setInvoiceNumbers((prev) => ({
+      ...prev,
+      [brand]: prev[brand] + 1,
+    }))
+
+    setInvoiceProjects((prev) => ({
+      ...prev,
+      [brand]: [],
+    }))
+
+    toast.success(`Invoice exported as ${fileName}`)
+  }
+
+  const handleDeleteInvoiceProject = (brand: string, projectId: string, projectTitle: string) => {
+    setClearDialog({
+      isOpen: true,
+      type: "completed",
+      count: 1,
+      brand: `Remove "${projectTitle}" from ${brand} invoice`,
+    })
+
+    // Store the project info for deletion
+    setProjectToDelete({ brand, projectId })
+  }
+
+  const [clearDialog, setClearDialog] = useState({
+    isOpen: false,
+    type: null,
+    count: 0,
+    brand: "",
+  })
+
+  const [projectToDelete, setProjectToDelete] = useState<{ brand: string; projectId: string } | null>(null)
+
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -339,7 +531,11 @@ export function InvoiceManager({
                           <Button
                             variant="ghost"
                             size="sm"
+<<<<<<< HEAD
                             onClick={() => onDeleteProject(brand, project.id, project.title)}
+=======
+                            onClick={() => handleDeleteInvoiceProject(brand, project.id, project.title)}
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
                             className="h-6 w-6 p-0 text-red-600 hover:text-red-700"
                           >
                             <Trash2 className="h-3 w-3" />

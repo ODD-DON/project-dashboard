@@ -81,6 +81,7 @@ interface InvoiceProject extends Project {
   addedToInvoiceAt?: Date
 }
 
+<<<<<<< HEAD
 interface ExportedInvoice {
   id: string
   invoiceNumber: string
@@ -90,6 +91,16 @@ interface ExportedInvoice {
   exportedAt: Date
   isPaid: boolean
   projects: InvoiceProject[]
+=======
+interface Invoice {
+  id: string
+  invoiceNumber: string
+  brand: Brand
+  projects: InvoiceProject[]
+  totalAmount: number
+  createdAt: Date
+  status: "draft" | "sent"
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
 }
 
 const brandColors = {
@@ -300,13 +311,21 @@ export default function ProjectManagementDashboard() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
+<<<<<<< HEAD
+=======
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
   const [activeTab, setActiveTab] = useState<"projects" | "invoices">("projects")
   const [invoiceProjects, setInvoiceProjects] = useState<{ [brand: string]: InvoiceProject[] }>({
     "Wami Live": [],
     "Luck On Fourth": [],
     "The Hideout": [],
   })
+<<<<<<< HEAD
   const [exportedInvoices, setExportedInvoices] = useState<{ [brand: string]: ExportedInvoice[] }>({
+=======
+  const [exportedInvoices, setExportedInvoices] = useState<{ [brand: string]: Invoice[] }>({
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
     "Wami Live": [],
     "Luck On Fourth": [],
     "The Hideout": [],
@@ -366,6 +385,7 @@ export default function ProjectManagementDashboard() {
     count: 0,
   })
 
+<<<<<<< HEAD
   const [invoiceNumbers, setInvoiceNumbers] = useState<{ [brand: string]: number }>({
     "Wami Live": 1000,
     "Luck On Fourth": 2000,
@@ -400,6 +420,58 @@ export default function ProjectManagementDashboard() {
     } catch (error) {
       console.error("Error checking tables:", error)
       toast.error("Database tables not found. Please run the setup scripts first.")
+=======
+  // Load projects from Supabase on mount
+  useEffect(() => {
+    loadProjects()
+  }, [])
+
+  const ensureTableExists = async () => {
+    try {
+      // First, try to create the table if it doesn't exist
+      const { error: createError } = await supabase.rpc("create_projects_table_if_not_exists")
+
+      if (createError) {
+        // If the RPC doesn't exist, create the table directly
+        const { error: tableError } = await supabase.from("projects").select("id").limit(1)
+
+        if (tableError && tableError.message.includes("does not exist")) {
+          // Table doesn't exist, let's create it using a direct SQL query
+          const createTableSQL = `
+            CREATE TABLE IF NOT EXISTS projects (
+              id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+              title TEXT NOT NULL,
+              brand TEXT NOT NULL,
+              type TEXT NOT NULL,
+              description TEXT NOT NULL,
+              deadline TIMESTAMP WITH TIME ZONE NOT NULL,
+              priority INTEGER NOT NULL DEFAULT 1,
+              status TEXT NOT NULL DEFAULT 'Pending',
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+              files JSONB DEFAULT '[]'::jsonb
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_projects_priority ON projects(priority);
+            CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+            CREATE INDEX IF NOT EXISTS idx_projects_created_at ON projects(created_at);
+            
+            ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+            
+            CREATE POLICY IF NOT EXISTS "Allow all operations on projects" ON projects
+              FOR ALL USING (true);
+          `
+
+          const { error: sqlError } = await supabase.rpc("exec_sql", { sql: createTableSQL })
+
+          if (sqlError) {
+            console.error("Error creating table:", sqlError)
+            throw new Error("Failed to create projects table. Please run the setup script manually.")
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error ensuring table exists:", error)
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
       throw error
     }
   }
@@ -407,7 +479,13 @@ export default function ProjectManagementDashboard() {
   const loadProjects = async () => {
     try {
       setLoading(true)
+<<<<<<< HEAD
       await ensureTablesExist()
+=======
+
+      // First ensure the table exists
+      await ensureTableExists()
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
 
       const { data, error } = await supabase.from("projects").select("*").order("priority", { ascending: true })
 
@@ -428,6 +506,7 @@ export default function ProjectManagementDashboard() {
     } catch (error) {
       console.error("Error loading projects:", error)
       toast.error("Failed to load projects. Please check your database setup.")
+<<<<<<< HEAD
     } finally {
       setLoading(false)
     }
@@ -537,6 +616,30 @@ export default function ProjectManagementDashboard() {
       setInvoiceNumbers(numbers)
     } catch (error) {
       console.error("Error loading invoice numbers:", error)
+=======
+
+      // Fallback to localStorage if database fails
+      const savedProjects = localStorage.getItem("projects")
+      if (savedProjects) {
+        try {
+          const parsed = JSON.parse(savedProjects)
+          const projectsWithDefaults = parsed.map((p: any) => ({
+            ...p,
+            deadline: new Date(p.deadline),
+            created_at: new Date(p.created_at),
+            files: p.files || [],
+            priority: p.priority || 1,
+          }))
+          projectsWithDefaults.sort((a, b) => a.priority - b.priority)
+          setProjects(projectsWithDefaults)
+          toast.success("Loaded projects from local storage")
+        } catch (parseError) {
+          console.error("Error parsing localStorage:", parseError)
+        }
+      }
+    } finally {
+      setLoading(false)
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
     }
   }
 
@@ -711,6 +814,7 @@ export default function ProjectManagementDashboard() {
 
     try {
       // Update project status to completed
+<<<<<<< HEAD
       const { error: projectError } = await supabase
         .from("projects")
         .update({ status: "Completed" })
@@ -744,13 +848,39 @@ export default function ProjectManagementDashboard() {
         toast.error("Failed to add to invoice")
         return
       }
+=======
+      const { error } = await supabase.from("projects").update({ status: "Completed" }).eq("id", priceDialog.project.id)
+
+      if (error) {
+        console.error("Error updating status:", error)
+        toast.error("Failed to update status")
+        return
+      }
+
+      // Update project with invoice price
+      const updatedProject: InvoiceProject = {
+        ...priceDialog.project,
+        status: "Completed",
+        invoicePrice,
+        addedToInvoiceAt: new Date(),
+      }
+
+      // Add to invoice projects for the brand
+      setInvoiceProjects((prev) => ({
+        ...prev,
+        [priceDialog.project!.brand]: [...prev[priceDialog.project!.brand], updatedProject],
+      }))
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
 
       // Update local state
       setProjects((prev) => prev.map((p) => (p.id === priceDialog.project!.id ? { ...p, status: "Completed" } : p)))
 
+<<<<<<< HEAD
       // Reload invoice projects
       await loadInvoiceProjects()
 
+=======
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
       // Close dialog and reset
       setPriceDialog({
         isOpen: false,
@@ -829,6 +959,7 @@ export default function ProjectManagementDashboard() {
   const confirmClearCompleted = async () => {
     if (clearDialog.type === "invoice" && clearDialog.brand) {
       // Handle invoice history clearing
+<<<<<<< HEAD
       try {
         const { error } = await supabase.from("exported_invoices").delete().eq("brand", clearDialog.brand)
 
@@ -845,12 +976,21 @@ export default function ProjectManagementDashboard() {
         toast.error("Failed to clear invoice history")
       }
 
+=======
+      setExportedInvoices((prev) => ({
+        ...prev,
+        [clearDialog.brand!]: [],
+      }))
+
+      toast.success(`Cleared ${clearDialog.count} invoices from ${clearDialog.brand} history`)
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
       setClearDialog({ isOpen: false, type: "completed", count: 0 })
       return
     }
 
     // Handle invoice project deletion
     if (projectToDelete) {
+<<<<<<< HEAD
       try {
         const { error } = await supabase.from("invoice_projects").delete().eq("project_id", projectToDelete.projectId)
 
@@ -867,6 +1007,14 @@ export default function ProjectManagementDashboard() {
         toast.error("Failed to remove from invoice")
       }
 
+=======
+      setInvoiceProjects((prev) => ({
+        ...prev,
+        [projectToDelete.brand]: prev[projectToDelete.brand].filter((p) => p.id !== projectToDelete.projectId),
+      }))
+
+      toast.success("Project removed from invoice")
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
       setClearDialog({ isOpen: false, type: "completed", count: 0 })
       setProjectToDelete(null)
       return
@@ -1107,9 +1255,12 @@ export default function ProjectManagementDashboard() {
           exportedInvoices={exportedInvoices}
           setExportedInvoices={setExportedInvoices}
           onDeleteProject={handleDeleteInvoiceProject}
+<<<<<<< HEAD
           invoiceNumbers={invoiceNumbers}
           setInvoiceNumbers={setInvoiceNumbers}
           onReloadData={loadAllData}
+=======
+>>>>>>> c98f7829852c51f317f72844cff2885999c6452f
         />
       ) : (
         <div className="container mx-auto px-4 py-4 sm:py-6 md:py-8 space-y-6 sm:space-y-8 md:space-y-12">
