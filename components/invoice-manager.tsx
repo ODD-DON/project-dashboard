@@ -79,20 +79,28 @@ export function InvoiceManager({
 
   const toggleInvoicePaid = async (brand: string, invoiceId: string) => {
     try {
+      console.log("💳 Toggling payment status for invoice:", invoiceId)
+
       // Find the current invoice
       const currentInvoice = exportedInvoices[brand]?.find((inv) => inv.id === invoiceId)
-      if (!currentInvoice) return
+      if (!currentInvoice) {
+        console.error("❌ Invoice not found:", invoiceId)
+        return
+      }
 
       const newPaidStatus = !currentInvoice.isPaid
+      console.log("💳 New payment status:", newPaidStatus)
 
       // Update in Supabase
       const { error } = await supabase.from("exported_invoices").update({ is_paid: newPaidStatus }).eq("id", invoiceId)
 
       if (error) {
-        console.error("Error updating invoice payment status:", error)
-        toast.error("Failed to update payment status")
+        console.error("❌ Error updating invoice payment status:", error)
+        toast.error("Failed to update payment status: " + error.message)
         return
       }
+
+      console.log("✅ Payment status updated in database")
 
       // Update local state
       setExportedInvoices((prev) => ({
@@ -102,9 +110,9 @@ export function InvoiceManager({
         ),
       }))
 
-      toast.success("Invoice payment status updated")
+      toast.success(`Invoice marked as ${newPaidStatus ? "paid" : "unpaid"}`)
     } catch (error) {
-      console.error("Error updating payment status:", error)
+      console.error("❌ Error updating payment status:", error)
       toast.error("Failed to update payment status")
     }
   }
@@ -128,6 +136,9 @@ export function InvoiceManager({
     }
 
     try {
+      console.log("📄 Generating invoice PDF for:", brand)
+      console.log("📄 Projects to include:", projects.length)
+
       const doc = new jsPDF()
       const currentDate = new Date()
       const invoiceNumber = invoiceNumbers[brand].toString().padStart(3, "0")
@@ -214,44 +225,71 @@ export function InvoiceManager({
         .replace("The_Hideout", "THE_HIDEOUT")
       const fileName = `${brandName}_Invoice_${format(currentDate, "M-dd-yy")}.pdf`
 
-      // Save exported invoice to Supabase
-      const exportedInvoiceData = {
-        invoice_number: invoiceNumber,
-        brand: brand,
-        file_name: fileName,
-        total_amount: total,
-        is_paid: false,
-        projects: projects,
-      }
+      console.log("📄 Generated PDF filename:", fileName)
 
-      const { error: exportError } = await supabase.from("exported_invoices").insert([exportedInvoiceData])
+      // CRITICAL: Use database transaction to ensure data consistency
+      const { data: transactionResult, error: transactionError } = await supabase.rpc("process_invoice_export", {
+        p_brand: brand,
+        p_invoice_number: invoiceNumber,
+        p_file_name: fileName,
+        p_total_amount: total,
+        p_projects: projects,
+        p_project_ids: projects.map((p) => p.id),
+      })
 
-      if (exportError) {
-        console.error("Error saving exported invoice:", exportError)
-        toast.error("Failed to save invoice record")
-        return
-      }
+      if (transactionError) {
+        console.error("❌ Transaction error:", transactionError)
 
-      // Update invoice number in Supabase
-      const { error: numberError } = await supabase
-        .from("invoice_numbers")
-        .update({ next_number: invoiceNumbers[brand] + 1 })
-        .eq("brand", brand)
+        // Fallback to individual operations if stored procedure doesn't exist
+        console.log("🔄 Falling back to individual operations...")
 
-      if (numberError) {
-        console.error("Error updating invoice number:", numberError)
-        toast.error("Failed to update invoice number")
-        return
-      }
+        // Save exported invoice to Supabase
+        const exportedInvoiceData = {
+          invoice_number: invoiceNumber,
+          brand: brand,
+          file_name: fileName,
+          total_amount: total,
+          is_paid: false,
+          projects: projects,
+        }
 
-      // Clear invoice projects from Supabase
-      const projectIds = projects.map((p) => p.id)
-      const { error: clearError } = await supabase.from("invoice_projects").delete().in("project_id", projectIds)
+        const { error: exportError } = await supabase.from("exported_invoices").insert([exportedInvoiceData])
 
-      if (clearError) {
-        console.error("Error clearing invoice projects:", clearError)
-        toast.error("Failed to clear invoice projects")
-        return
+        if (exportError) {
+          console.error("❌ Error saving exported invoice:", exportError)
+          toast.error("Failed to save invoice record: " + exportError.message)
+          return
+        }
+
+        console.log("✅ Exported invoice saved")
+
+        // Update invoice number in Supabase
+        const { error: numberError } = await supabase
+          .from("invoice_numbers")
+          .update({ next_number: invoiceNumbers[brand] + 1 })
+          .eq("brand", brand)
+
+        if (numberError) {
+          console.error("❌ Error updating invoice number:", numberError)
+          toast.error("Failed to update invoice number: " + numberError.message)
+          return
+        }
+
+        console.log("✅ Invoice number updated")
+
+        // Clear invoice projects from Supabase
+        const projectIds = projects.map((p) => p.id)
+        const { error: clearError } = await supabase.from("invoice_projects").delete().in("project_id", projectIds)
+
+        if (clearError) {
+          console.error("❌ Error clearing invoice projects:", clearError)
+          toast.error("Failed to clear invoice projects: " + clearError.message)
+          return
+        }
+
+        console.log("✅ Invoice projects cleared from database")
+      } else {
+        console.log("✅ Transaction completed successfully")
       }
 
       // Update local state
@@ -266,15 +304,17 @@ export function InvoiceManager({
       }))
 
       // Reload all data to sync with database
+      console.log("🔄 Reloading all data...")
       await onReloadData()
 
       // Download the PDF
       doc.save(fileName)
 
       toast.success(`Invoice exported as ${fileName}`)
+      console.log("✅ Invoice export completed successfully")
     } catch (error) {
-      console.error("Error generating invoice:", error)
-      toast.error("Failed to generate invoice")
+      console.error("❌ Error generating invoice:", error)
+      toast.error("Failed to generate invoice: " + (error as Error).message)
     }
   }
 
