@@ -2,17 +2,18 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
-import { Download, FileText, DollarSign, Trash2 } from "lucide-react"
+import { Download, FileText, DollarSign, Trash2, Bug, RefreshCw } from "lucide-react"
 import { format } from "date-fns"
 import jsPDF from "jspdf"
 import { Label } from "@/components/ui/label"
 import { supabase } from "@/lib/supabase"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 interface InvoiceProject {
   id: string
@@ -36,6 +37,13 @@ interface InvoiceManagerProps {
   exportedInvoices: { [brand: string]: any[] }
   setExportedInvoices: React.Dispatch<React.SetStateAction<{ [brand: string]: any[] }>>
   onDeleteProject: (brand: string, projectId: string, projectTitle: string) => void
+}
+
+interface DebugLog {
+  timestamp: string
+  type: "info" | "success" | "error" | "warning"
+  message: string
+  data?: any
 }
 
 const brandColors = {
@@ -64,6 +72,8 @@ export function InvoiceManager({
     "The Hideout": 1,
   })
   const [loading, setLoading] = useState(true)
+  const [debugLogs, setDebugLogs] = useState<DebugLog[]>([])
+  const [showDebug, setShowDebug] = useState(true)
   const [clearDialog, setClearDialog] = useState({
     isOpen: false,
     type: null,
@@ -72,35 +82,69 @@ export function InvoiceManager({
   })
   const [projectToDelete, setProjectToDelete] = useState<{ brand: string; projectId: string } | null>(null)
 
-  // Add this useEffect right after the state declarations in the InvoiceManager component:
-  useEffect(() => {
-    const loadInvoiceData = async () => {
-      console.log("🔄 Loading invoice data from database...")
-      setLoading(true)
-      try {
-        // Load invoice projects from database
-        const { data: invoiceData, error: invoiceError } = await supabase
-          .from("invoice_projects")
-          .select("*")
-          .order("added_to_invoice_at", { ascending: true })
+  // Debug logging function
+  const addDebugLog = useCallback((type: DebugLog["type"], message: string, data?: any) => {
+    const log: DebugLog = {
+      timestamp: new Date().toLocaleTimeString(),
+      type,
+      message,
+      data,
+    }
+    setDebugLogs((prev) => [log, ...prev.slice(0, 49)]) // Keep last 50 logs
+    console.log(`[${type.toUpperCase()}] ${message}`, data || "")
+  }, [])
 
-        console.log("📊 Raw invoice data from database:", invoiceData)
+  // Manual refresh function
+  const manualRefresh = async () => {
+    addDebugLog("info", "🔄 Manual refresh triggered")
+    await loadInvoiceData()
+  }
 
-        if (invoiceError) {
-          console.error("❌ Error loading invoice data:", invoiceError)
-          setLoading(false)
-          return
-        }
+  // Load invoice data function
+  const loadInvoiceData = async () => {
+    addDebugLog("info", "🔄 Starting invoice data load...")
+    setLoading(true)
 
-        // Group invoice projects by brand
-        const groupedInvoiceData: { [brand: string]: InvoiceProject[] } = {
-          "Wami Live": [],
-          "Luck On Fourth": [],
-          "The Hideout": [],
-        }
+    try {
+      // Test database connection first
+      addDebugLog("info", "🔗 Testing database connection...")
+      const { data: testData, error: testError } = await supabase.from("invoice_projects").select("count").limit(1)
 
-        invoiceData?.forEach((item: any) => {
-          console.log("🔄 Processing invoice item:", item)
+      if (testError) {
+        addDebugLog("error", "❌ Database connection failed", testError)
+        setLoading(false)
+        return
+      }
+
+      addDebugLog("success", "✅ Database connection successful")
+
+      // Load invoice projects from database
+      addDebugLog("info", "📊 Loading invoice projects...")
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from("invoice_projects")
+        .select("*")
+        .order("added_to_invoice_at", { ascending: true })
+
+      addDebugLog("info", `📊 Raw invoice query result: ${invoiceData?.length || 0} records`, invoiceData)
+
+      if (invoiceError) {
+        addDebugLog("error", "❌ Error loading invoice data", invoiceError)
+        setLoading(false)
+        return
+      }
+
+      // Group invoice projects by brand
+      const groupedInvoiceData: { [brand: string]: InvoiceProject[] } = {
+        "Wami Live": [],
+        "Luck On Fourth": [],
+        "The Hideout": [],
+      }
+
+      let processedCount = 0
+      invoiceData?.forEach((item: any) => {
+        addDebugLog("info", `🔄 Processing invoice item ${processedCount + 1}`, item)
+
+        try {
           const project: InvoiceProject = {
             id: item.project_id,
             title: item.title,
@@ -118,73 +162,80 @@ export function InvoiceManager({
 
           if (groupedInvoiceData[item.brand]) {
             groupedInvoiceData[item.brand].push(project)
+            addDebugLog("success", `✅ Added project "${item.title}" to ${item.brand}`)
+          } else {
+            addDebugLog("warning", `⚠️ Unknown brand: ${item.brand}`)
           }
-        })
-
-        console.log("📋 Grouped invoice data:", groupedInvoiceData)
-        setInvoiceProjects(groupedInvoiceData)
-
-        // Load exported invoices from database
-        const { data: exportedData, error: exportedError } = await supabase
-          .from("exported_invoices")
-          .select("*")
-          .order("exported_at", { ascending: false })
-
-        console.log("📄 Raw exported invoices:", exportedData)
-
-        if (exportedError) {
-          console.error("❌ Error loading exported invoices:", exportedError)
-          setLoading(false)
-          return
+          processedCount++
+        } catch (error) {
+          addDebugLog("error", `❌ Error processing item ${processedCount + 1}`, error)
         }
+      })
 
-        // Group exported invoices by brand
-        const groupedExportedData: { [brand: string]: any[] } = {
-          "Wami Live": [],
-          "Luck On Fourth": [],
-          "The Hideout": [],
-        }
+      addDebugLog("info", `📋 Grouped invoice data summary:`, {
+        "Wami Live": groupedInvoiceData["Wami Live"].length,
+        "Luck On Fourth": groupedInvoiceData["Luck On Fourth"].length,
+        "The Hideout": groupedInvoiceData["The Hideout"].length,
+      })
 
-        exportedData?.forEach((item: any) => {
-          const invoice = {
-            id: item.id,
-            invoiceNumber: item.invoice_number,
-            fileName: item.file_name,
-            totalAmount: Number.parseFloat(item.total_amount),
-            exportedAt: new Date(item.exported_at),
-            isPaid: item.is_paid,
-            projects: item.projects,
-          }
+      // Update state
+      setInvoiceProjects(groupedInvoiceData)
+      addDebugLog("success", "✅ Invoice projects state updated")
 
-          if (groupedExportedData[item.brand]) {
-            groupedExportedData[item.brand].push(invoice)
-          }
-        })
+      // Load exported invoices from database
+      addDebugLog("info", "📄 Loading exported invoices...")
+      const { data: exportedData, error: exportedError } = await supabase
+        .from("exported_invoices")
+        .select("*")
+        .order("exported_at", { ascending: false })
 
-        console.log("📊 Grouped exported data:", groupedExportedData)
-        setExportedInvoices(groupedExportedData)
+      addDebugLog("info", `📄 Raw exported invoices: ${exportedData?.length || 0} records`, exportedData)
 
-        console.log("✅ Invoice data loading complete!")
-      } catch (error) {
-        console.error("💥 Error loading invoice data:", error)
-      } finally {
+      if (exportedError) {
+        addDebugLog("error", "❌ Error loading exported invoices", exportedError)
         setLoading(false)
+        return
       }
-    }
 
+      // Group exported invoices by brand
+      const groupedExportedData: { [brand: string]: any[] } = {
+        "Wami Live": [],
+        "Luck On Fourth": [],
+        "The Hideout": [],
+      }
+
+      exportedData?.forEach((item: any) => {
+        const invoice = {
+          id: item.id,
+          invoiceNumber: item.invoice_number,
+          fileName: item.file_name,
+          totalAmount: Number.parseFloat(item.total_amount),
+          exportedAt: new Date(item.exported_at),
+          isPaid: item.is_paid,
+          projects: item.projects,
+        }
+
+        if (groupedExportedData[item.brand]) {
+          groupedExportedData[item.brand].push(invoice)
+        }
+      })
+
+      setExportedInvoices(groupedExportedData)
+      addDebugLog("success", "✅ Exported invoices state updated")
+
+      addDebugLog("success", "🎉 Invoice data loading complete!")
+    } catch (error) {
+      addDebugLog("error", "💥 Critical error loading invoice data", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Load data on component mount
+  useEffect(() => {
+    addDebugLog("info", "🚀 InvoiceManager component mounted")
     loadInvoiceData()
   }, [])
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading invoice data...</p>
-        </div>
-      </div>
-    )
-  }
 
   const getBrandTotal = (brand: string) => {
     return invoiceProjects[brand]?.reduce((sum, project) => sum + (project.invoicePrice || 0), 0) || 0
@@ -198,6 +249,8 @@ export function InvoiceManager({
   }
 
   const toggleInvoicePaid = async (brand: string, invoiceId: string) => {
+    addDebugLog("info", `💳 Toggling payment status for invoice ${invoiceId} in ${brand}`)
+
     const newExportedInvoices = {
       ...exportedInvoices,
       [brand]: exportedInvoices[brand].map((invoice) =>
@@ -207,7 +260,6 @@ export function InvoiceManager({
 
     setExportedInvoices(newExportedInvoices)
 
-    // Save to database instead of localStorage
     try {
       const { error } = await supabase
         .from("exported_invoices")
@@ -215,14 +267,15 @@ export function InvoiceManager({
         .eq("id", invoiceId)
 
       if (error) {
-        console.error("Error updating invoice payment status:", error)
+        addDebugLog("error", "❌ Failed to update payment status in database", error)
         toast.error("Failed to update payment status")
         return
       }
 
+      addDebugLog("success", "✅ Payment status updated in database")
       toast.success("Invoice payment status updated and saved!")
     } catch (error) {
-      console.error("Error updating invoice payment status:", error)
+      addDebugLog("error", "💥 Critical error updating payment status", error)
       toast.error("Failed to update payment status")
     }
   }
@@ -239,11 +292,16 @@ export function InvoiceManager({
   }
 
   const generateInvoicePDF = async (brand: string) => {
+    addDebugLog("info", `📄 Starting PDF generation for ${brand}`)
+
     const projects = invoiceProjects[brand]
     if (!projects || projects.length === 0) {
+      addDebugLog("warning", "⚠️ No projects to invoice")
       toast.error("No projects to invoice")
       return
     }
+
+    addDebugLog("info", `📄 Generating PDF with ${projects.length} projects`, projects)
 
     const doc = new jsPDF()
     const currentDate = new Date()
@@ -342,6 +400,8 @@ export function InvoiceManager({
       projects: [...projects],
     }
 
+    addDebugLog("info", "💾 Saving exported invoice to database", exportedInvoice)
+
     // Update exported invoices and save to database
     const newExportedInvoices = {
       ...exportedInvoices,
@@ -365,17 +425,20 @@ export function InvoiceManager({
       ])
 
       if (error) {
-        console.error("Error saving exported invoice to database:", error)
+        addDebugLog("error", "❌ Failed to save exported invoice to database", error)
         toast.error("Failed to save invoice to database")
         return
       }
+
+      addDebugLog("success", "✅ Exported invoice saved to database")
     } catch (error) {
-      console.error("Error saving exported invoice to database:", error)
+      addDebugLog("error", "💥 Critical error saving exported invoice", error)
       toast.error("Failed to save invoice to database")
       return
     }
 
     doc.save(fileName)
+    addDebugLog("success", `📄 PDF saved as ${fileName}`)
 
     // Update invoice number and clear projects
     setInvoiceNumbers((prev) => ({
@@ -390,22 +453,26 @@ export function InvoiceManager({
     }
 
     setInvoiceProjects(clearedInvoiceProjects)
+    addDebugLog("info", `🧹 Clearing ${projects.length} projects from ${brand} invoice`)
 
     // Save cleared invoice projects to database
     try {
       const { error } = await supabase.from("invoice_projects").delete().eq("brand", brand)
 
       if (error) {
-        console.error("Error clearing invoice projects from database:", error)
+        addDebugLog("error", "❌ Failed to clear invoice projects from database", error)
         toast.error("Failed to clear invoice projects from database")
         return
       }
+
+      addDebugLog("success", "✅ Invoice projects cleared from database")
     } catch (error) {
-      console.error("Error clearing invoice projects from database:", error)
+      addDebugLog("error", "💥 Critical error clearing invoice projects", error)
       toast.error("Failed to clear invoice projects from database")
       return
     }
 
+    addDebugLog("success", `🎉 Invoice generation complete for ${brand}`)
     toast.success(`Invoice exported as ${fileName} - Data saved to database!`)
   }
 
@@ -421,8 +488,68 @@ export function InvoiceManager({
     setProjectToDelete({ brand, projectId })
   }
 
+  const getLogColor = (type: DebugLog["type"]) => {
+    switch (type) {
+      case "success":
+        return "text-green-600"
+      case "error":
+        return "text-red-600"
+      case "warning":
+        return "text-yellow-600"
+      default:
+        return "text-blue-600"
+    }
+  }
+
   return (
     <div className="space-y-6">
+      {/* Debug Panel */}
+      <Card className="border-2 border-dashed border-yellow-300 bg-yellow-50">
+        <Collapsible open={showDebug} onOpenChange={setShowDebug}>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="pb-2 cursor-pointer hover:bg-yellow-100">
+              <CardTitle className="flex items-center gap-2 text-yellow-800">
+                <Bug className="h-5 w-5" />
+                Debug System Logs
+                <Badge variant="outline" className="ml-auto">
+                  {debugLogs.length} logs
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <Button onClick={manualRefresh} size="sm" variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Manual Refresh
+                </Button>
+                <Button onClick={() => setDebugLogs([])} size="sm" variant="outline">
+                  Clear Logs
+                </Button>
+              </div>
+
+              <div className="max-h-60 overflow-y-auto bg-black text-green-400 p-4 rounded font-mono text-xs">
+                {debugLogs.length === 0 ? (
+                  <div className="text-gray-500">No logs yet...</div>
+                ) : (
+                  debugLogs.map((log, index) => (
+                    <div key={index} className={`mb-1 ${getLogColor(log.type)}`}>
+                      <span className="text-gray-400">[{log.timestamp}]</span> {log.message}
+                      {log.data && (
+                        <div className="ml-4 text-gray-300 text-xs">
+                          {typeof log.data === "object" ? JSON.stringify(log.data, null, 2) : log.data}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Invoice Manager</h2>
