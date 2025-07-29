@@ -311,177 +311,6 @@ export default function ProjectManagementDashboard() {
     "The Hideout": [],
   })
 
-  // Add these functions after the state declarations and before useEffect
-  const saveInvoiceDataToDatabase = async (invoiceData: { [brand: string]: InvoiceProject[] }) => {
-    try {
-      // Clear existing invoice projects
-      await supabase.from("invoice_projects").delete().neq("id", "00000000-0000-0000-0000-000000000000")
-
-      // Insert new invoice projects
-      const allProjects = Object.entries(invoiceData).flatMap(([brand, projects]) =>
-        projects.map((project) => ({
-          project_id: project.id,
-          title: project.title,
-          brand: project.brand,
-          type: project.type,
-          description: project.description,
-          deadline: project.deadline.toISOString(),
-          priority: project.priority,
-          status: project.status,
-          created_at: project.created_at.toISOString(),
-          files: project.files,
-          invoice_price: project.invoicePrice,
-          added_to_invoice_at: project.addedToInvoiceAt?.toISOString(),
-        })),
-      )
-
-      if (allProjects.length > 0) {
-        const { error } = await supabase.from("invoice_projects").insert(allProjects)
-        if (error) {
-          console.error("Error saving invoice data to database:", error)
-          throw error
-        }
-      }
-    } catch (error) {
-      console.error("Error saving invoice data to database:", error)
-      toast.error("Failed to save invoice data to database")
-    }
-  }
-
-  const loadInvoiceDataFromDatabase = async (): Promise<{ [brand: string]: InvoiceProject[] }> => {
-    try {
-      const { data, error } = await supabase
-        .from("invoice_projects")
-        .select("*")
-        .order("added_to_invoice_at", { ascending: true })
-
-      if (error) {
-        console.error("Error loading invoice data from database:", error)
-        return {
-          "Wami Live": [],
-          "Luck On Fourth": [],
-          "The Hideout": [],
-        }
-      }
-
-      const groupedData: { [brand: string]: InvoiceProject[] } = {
-        "Wami Live": [],
-        "Luck On Fourth": [],
-        "The Hideout": [],
-      }
-
-      data?.forEach((item: any) => {
-        const project: InvoiceProject = {
-          id: item.project_id,
-          title: item.title,
-          brand: item.brand,
-          type: item.type,
-          description: item.description,
-          deadline: new Date(item.deadline),
-          priority: item.priority,
-          status: item.status,
-          created_at: new Date(item.created_at),
-          files: item.files || [],
-          invoicePrice: Number.parseFloat(item.invoice_price),
-          added_to_invoice_at: item.added_to_invoice_at ? new Date(item.added_to_invoice_at) : undefined,
-        }
-
-        if (groupedData[item.brand]) {
-          groupedData[item.brand].push(project)
-        }
-      })
-
-      return groupedData
-    } catch (error) {
-      console.error("Error loading invoice data from database:", error)
-      return {
-        "Wami Live": [],
-        "Luck On Fourth": [],
-        "The Hideout": [],
-      }
-    }
-  }
-
-  const saveExportedInvoicesToDatabase = async (exportedData: { [brand: string]: any[] }) => {
-    try {
-      // Clear existing exported invoices
-      await supabase.from("exported_invoices").delete().neq("id", "00000000-0000-0000-0000-000000000000")
-
-      // Insert new exported invoices
-      const allInvoices = Object.entries(exportedData).flatMap(([brand, invoices]) =>
-        invoices.map((invoice) => ({
-          brand,
-          invoice_number: invoice.invoiceNumber,
-          file_name: invoice.fileName,
-          total_amount: invoice.totalAmount,
-          exported_at: invoice.exportedAt.toISOString(),
-          is_paid: invoice.isPaid,
-          projects: invoice.projects,
-        })),
-      )
-
-      if (allInvoices.length > 0) {
-        const { error } = await supabase.from("exported_invoices").insert(allInvoices)
-        if (error) {
-          console.error("Error saving exported invoices to database:", error)
-          throw error
-        }
-      }
-    } catch (error) {
-      console.error("Error saving exported invoices to database:", error)
-      toast.error("Failed to save exported invoices to database")
-    }
-  }
-
-  const loadExportedInvoicesFromDatabase = async (): Promise<{ [brand: string]: any[] }> => {
-    try {
-      const { data, error } = await supabase
-        .from("exported_invoices")
-        .select("*")
-        .order("exported_at", { ascending: false })
-
-      if (error) {
-        console.error("Error loading exported invoices from database:", error)
-        return {
-          "Wami Live": [],
-          "Luck On Fourth": [],
-          "The Hideout": [],
-        }
-      }
-
-      const groupedData: { [brand: string]: any[] } = {
-        "Wami Live": [],
-        "Luck On Fourth": [],
-        "The Hideout": [],
-      }
-
-      data?.forEach((item: any) => {
-        const invoice = {
-          id: item.id,
-          invoiceNumber: item.invoice_number,
-          fileName: item.file_name,
-          totalAmount: Number.parseFloat(item.total_amount),
-          exportedAt: new Date(item.exported_at),
-          isPaid: item.is_paid,
-          projects: item.projects,
-        }
-
-        if (groupedData[item.brand]) {
-          groupedData[item.brand].push(invoice)
-        }
-      })
-
-      return groupedData
-    } catch (error) {
-      console.error("Error loading exported invoices from database:", error)
-      return {
-        "Wami Live": [],
-        "Luck On Fourth": [],
-        "The Hideout": [],
-      }
-    }
-  }
-
   const [projectToDelete, setProjectToDelete] = useState<{
     brand: string
     projectId: string
@@ -540,15 +369,7 @@ export default function ProjectManagementDashboard() {
   useEffect(() => {
     const loadData = async () => {
       await loadProjects()
-
-      // Load invoice data from database
-      const savedInvoiceProjects = await loadInvoiceDataFromDatabase()
-      setInvoiceProjects(savedInvoiceProjects)
-
-      const savedExportedInvoices = await loadExportedInvoicesFromDatabase()
-      setExportedInvoices(savedExportedInvoices)
     }
-
     loadData()
   }, [])
 
@@ -831,22 +652,29 @@ export default function ProjectManagementDashboard() {
         return
       }
 
-      // Update project with invoice price
-      const updatedProject: InvoiceProject = {
-        ...priceDialog.project,
-        status: "Completed",
-        invoicePrice,
-        addedToInvoiceAt: new Date(),
-      }
+      // Save directly to invoice_projects table
+      const { error: invoiceError } = await supabase.from("invoice_projects").insert([
+        {
+          project_id: priceDialog.project.id,
+          title: priceDialog.project.title,
+          brand: priceDialog.project.brand,
+          type: priceDialog.project.type,
+          description: priceDialog.project.description,
+          deadline: priceDialog.project.deadline.toISOString(),
+          priority: priceDialog.project.priority,
+          status: "Completed",
+          created_at: priceDialog.project.created_at.toISOString(),
+          files: priceDialog.project.files || [],
+          invoice_price: invoicePrice,
+          added_to_invoice_at: new Date().toISOString(),
+        },
+      ])
 
-      // Add to invoice projects for the brand and save to localStorage
-      const newInvoiceProjects = {
-        ...invoiceProjects,
-        [priceDialog.project.brand]: [...invoiceProjects[priceDialog.project.brand], updatedProject],
+      if (invoiceError) {
+        console.error("Error saving to invoice_projects:", invoiceError)
+        toast.error("Failed to save to invoice")
+        return
       }
-
-      setInvoiceProjects(newInvoiceProjects)
-      await saveInvoiceDataToDatabase(newInvoiceProjects)
 
       // Update local state
       setProjects((prev) => prev.map((p) => (p.id === priceDialog.project!.id ? { ...p, status: "Completed" } : p)))
@@ -859,7 +687,7 @@ export default function ProjectManagementDashboard() {
       })
 
       toast.success(
-        `Project completed and added to ${priceDialog.project.brand} invoice ($${invoicePrice}) - Data saved!`,
+        `Project completed and added to ${priceDialog.project.brand} invoice ($${invoicePrice}) - Saved to database!`,
       )
     } catch (error) {
       console.error("Error updating status:", error)
@@ -937,8 +765,6 @@ export default function ProjectManagementDashboard() {
       }
 
       setExportedInvoices(newExportedInvoices)
-      await saveExportedInvoicesToDatabase(newExportedInvoices)
-
       toast.success(`Cleared ${clearDialog.count} invoices from ${clearDialog.brand} history`)
       setClearDialog({ isOpen: false, type: "completed", count: 0 })
       return
@@ -954,7 +780,6 @@ export default function ProjectManagementDashboard() {
       }
 
       setInvoiceProjects(newInvoiceProjects)
-      await saveInvoiceDataToDatabase(newInvoiceProjects)
 
       toast.success("Project removed from invoice")
       setClearDialog({ isOpen: false, type: "completed", count: 0 })

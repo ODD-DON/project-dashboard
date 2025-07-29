@@ -67,6 +67,7 @@ export function InvoiceManager({
   // Add this useEffect right after the state declarations in the InvoiceManager component:
   useEffect(() => {
     const loadInvoiceData = async () => {
+      console.log("🔄 Loading invoice data from database...")
       try {
         // Load invoice projects from database
         const { data: invoiceData, error: invoiceError } = await supabase
@@ -74,8 +75,10 @@ export function InvoiceManager({
           .select("*")
           .order("added_to_invoice_at", { ascending: true })
 
+        console.log("📊 Raw invoice data from database:", invoiceData)
+
         if (invoiceError) {
-          console.error("Error loading invoice data:", invoiceError)
+          console.error("❌ Error loading invoice data:", invoiceError)
           return
         }
 
@@ -87,6 +90,7 @@ export function InvoiceManager({
         }
 
         invoiceData?.forEach((item: any) => {
+          console.log("🔄 Processing invoice item:", item)
           const project: InvoiceProject = {
             id: item.project_id,
             title: item.title,
@@ -107,6 +111,7 @@ export function InvoiceManager({
           }
         })
 
+        console.log("📋 Grouped invoice data:", groupedInvoiceData)
         setInvoiceProjects(groupedInvoiceData)
 
         // Load exported invoices from database
@@ -115,8 +120,10 @@ export function InvoiceManager({
           .select("*")
           .order("exported_at", { ascending: false })
 
+        console.log("📄 Raw exported invoices:", exportedData)
+
         if (exportedError) {
-          console.error("Error loading exported invoices:", exportedError)
+          console.error("❌ Error loading exported invoices:", exportedError)
           return
         }
 
@@ -143,9 +150,12 @@ export function InvoiceManager({
           }
         })
 
+        console.log("📊 Grouped exported data:", groupedExportedData)
         setExportedInvoices(groupedExportedData)
+
+        console.log("✅ Invoice data loading complete!")
       } catch (error) {
-        console.error("Error loading invoice data:", error)
+        console.error("💥 Error loading invoice data:", error)
       }
     }
 
