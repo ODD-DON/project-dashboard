@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -63,6 +63,94 @@ export function InvoiceManager({
     "Luck On Fourth": 1,
     "The Hideout": 1,
   })
+
+  // Add this useEffect right after the state declarations in the InvoiceManager component:
+  useEffect(() => {
+    const loadInvoiceData = async () => {
+      try {
+        // Load invoice projects from database
+        const { data: invoiceData, error: invoiceError } = await supabase
+          .from("invoice_projects")
+          .select("*")
+          .order("added_to_invoice_at", { ascending: true })
+
+        if (invoiceError) {
+          console.error("Error loading invoice data:", invoiceError)
+          return
+        }
+
+        // Group invoice projects by brand
+        const groupedInvoiceData: { [brand: string]: InvoiceProject[] } = {
+          "Wami Live": [],
+          "Luck On Fourth": [],
+          "The Hideout": [],
+        }
+
+        invoiceData?.forEach((item: any) => {
+          const project: InvoiceProject = {
+            id: item.project_id,
+            title: item.title,
+            brand: item.brand,
+            type: item.type,
+            description: item.description,
+            deadline: new Date(item.deadline),
+            priority: item.priority,
+            status: item.status,
+            created_at: new Date(item.created_at),
+            files: item.files || [],
+            invoicePrice: Number.parseFloat(item.invoice_price),
+            addedToInvoiceAt: item.added_to_invoice_at ? new Date(item.added_to_invoice_at) : undefined,
+          }
+
+          if (groupedInvoiceData[item.brand]) {
+            groupedInvoiceData[item.brand].push(project)
+          }
+        })
+
+        setInvoiceProjects(groupedInvoiceData)
+
+        // Load exported invoices from database
+        const { data: exportedData, error: exportedError } = await supabase
+          .from("exported_invoices")
+          .select("*")
+          .order("exported_at", { ascending: false })
+
+        if (exportedError) {
+          console.error("Error loading exported invoices:", exportedError)
+          return
+        }
+
+        // Group exported invoices by brand
+        const groupedExportedData: { [brand: string]: any[] } = {
+          "Wami Live": [],
+          "Luck On Fourth": [],
+          "The Hideout": [],
+        }
+
+        exportedData?.forEach((item: any) => {
+          const invoice = {
+            id: item.id,
+            invoiceNumber: item.invoice_number,
+            fileName: item.file_name,
+            totalAmount: Number.parseFloat(item.total_amount),
+            exportedAt: new Date(item.exported_at),
+            isPaid: item.is_paid,
+            projects: item.projects,
+          }
+
+          if (groupedExportedData[item.brand]) {
+            groupedExportedData[item.brand].push(invoice)
+          }
+        })
+
+        setExportedInvoices(groupedExportedData)
+      } catch (error) {
+        console.error("Error loading invoice data:", error)
+      }
+    }
+
+    loadInvoiceData()
+  }, []) // Empty dependency array means this runs once when component mounts
 
   const getBrandTotal = (brand: string) => {
     return invoiceProjects[brand]?.reduce((sum, project) => sum + (project.invoicePrice || 0), 0) || 0
