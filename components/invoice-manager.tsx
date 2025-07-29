@@ -63,11 +63,20 @@ export function InvoiceManager({
     "Luck On Fourth": 1,
     "The Hideout": 1,
   })
+  const [loading, setLoading] = useState(true)
+  const [clearDialog, setClearDialog] = useState({
+    isOpen: false,
+    type: null,
+    count: 0,
+    brand: "",
+  })
+  const [projectToDelete, setProjectToDelete] = useState<{ brand: string; projectId: string } | null>(null)
 
   // Add this useEffect right after the state declarations in the InvoiceManager component:
   useEffect(() => {
     const loadInvoiceData = async () => {
       console.log("🔄 Loading invoice data from database...")
+      setLoading(true)
       try {
         // Load invoice projects from database
         const { data: invoiceData, error: invoiceError } = await supabase
@@ -79,6 +88,7 @@ export function InvoiceManager({
 
         if (invoiceError) {
           console.error("❌ Error loading invoice data:", invoiceError)
+          setLoading(false)
           return
         }
 
@@ -124,6 +134,7 @@ export function InvoiceManager({
 
         if (exportedError) {
           console.error("❌ Error loading exported invoices:", exportedError)
+          setLoading(false)
           return
         }
 
@@ -156,11 +167,24 @@ export function InvoiceManager({
         console.log("✅ Invoice data loading complete!")
       } catch (error) {
         console.error("💥 Error loading invoice data:", error)
+      } finally {
+        setLoading(false)
       }
     }
 
     loadInvoiceData()
-  }, []) // Empty dependency array means this runs once when component mounts
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading invoice data...</p>
+        </div>
+      </div>
+    )
+  }
 
   const getBrandTotal = (brand: string) => {
     return invoiceProjects[brand]?.reduce((sum, project) => sum + (project.invoicePrice || 0), 0) || 0
@@ -396,15 +420,6 @@ export function InvoiceManager({
     // Store the project info for deletion
     setProjectToDelete({ brand, projectId })
   }
-
-  const [clearDialog, setClearDialog] = useState({
-    isOpen: false,
-    type: null,
-    count: 0,
-    brand: "",
-  })
-
-  const [projectToDelete, setProjectToDelete] = useState<{ brand: string; projectId: string } | null>(null)
 
   return (
     <div className="space-y-6">

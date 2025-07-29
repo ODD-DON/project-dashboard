@@ -367,10 +367,7 @@ export default function ProjectManagementDashboard() {
 
   // Load projects from Supabase on mount
   useEffect(() => {
-    const loadData = async () => {
-      await loadProjects()
-    }
-    loadData()
+    loadProjects()
   }, [])
 
   const ensureTableExists = async () => {
