@@ -26,7 +26,6 @@ import {
   CheckCircle,
   AlertCircle,
   Menu,
-  ExternalLink,
   Loader2,
 } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -81,15 +80,14 @@ interface InvoiceProject extends Project {
   addedToInvoiceAt?: Date
 }
 
-interface ExportedInvoice {
+interface Invoice {
   id: string
   invoiceNumber: string
   brand: Brand
-  fileName: string
-  totalAmount: number
-  exportedAt: Date
-  isPaid: boolean
   projects: InvoiceProject[]
+  totalAmount: number
+  createdAt: Date
+  status: "draft" | "sent"
 }
 
 const brandColors = {
@@ -300,17 +298,189 @@ export default function ProjectManagementDashboard() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
+  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [activeTab, setActiveTab] = useState<"projects" | "invoices">("projects")
   const [invoiceProjects, setInvoiceProjects] = useState<{ [brand: string]: InvoiceProject[] }>({
     "Wami Live": [],
     "Luck On Fourth": [],
     "The Hideout": [],
   })
-  const [exportedInvoices, setExportedInvoices] = useState<{ [brand: string]: ExportedInvoice[] }>({
+  const [exportedInvoices, setExportedInvoices] = useState<{ [brand: string]: Invoice[] }>({
     "Wami Live": [],
     "Luck On Fourth": [],
     "The Hideout": [],
   })
+
+  // Add these functions after the state declarations and before useEffect
+  const saveInvoiceDataToDatabase = async (invoiceData: { [brand: string]: InvoiceProject[] }) => {
+    try {
+      // Clear existing invoice projects
+      await supabase.from("invoice_projects").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+
+      // Insert new invoice projects
+      const allProjects = Object.entries(invoiceData).flatMap(([brand, projects]) =>
+        projects.map((project) => ({
+          project_id: project.id,
+          title: project.title,
+          brand: project.brand,
+          type: project.type,
+          description: project.description,
+          deadline: project.deadline.toISOString(),
+          priority: project.priority,
+          status: project.status,
+          created_at: project.created_at.toISOString(),
+          files: project.files,
+          invoice_price: project.invoicePrice,
+          added_to_invoice_at: project.addedToInvoiceAt?.toISOString(),
+        })),
+      )
+
+      if (allProjects.length > 0) {
+        const { error } = await supabase.from("invoice_projects").insert(allProjects)
+        if (error) {
+          console.error("Error saving invoice data to database:", error)
+          throw error
+        }
+      }
+    } catch (error) {
+      console.error("Error saving invoice data to database:", error)
+      toast.error("Failed to save invoice data to database")
+    }
+  }
+
+  const loadInvoiceDataFromDatabase = async (): Promise<{ [brand: string]: InvoiceProject[] }> => {
+    try {
+      const { data, error } = await supabase
+        .from("invoice_projects")
+        .select("*")
+        .order("added_to_invoice_at", { ascending: true })
+
+      if (error) {
+        console.error("Error loading invoice data from database:", error)
+        return {
+          "Wami Live": [],
+          "Luck On Fourth": [],
+          "The Hideout": [],
+        }
+      }
+
+      const groupedData: { [brand: string]: InvoiceProject[] } = {
+        "Wami Live": [],
+        "Luck On Fourth": [],
+        "The Hideout": [],
+      }
+
+      data?.forEach((item: any) => {
+        const project: InvoiceProject = {
+          id: item.project_id,
+          title: item.title,
+          brand: item.brand,
+          type: item.type,
+          description: item.description,
+          deadline: new Date(item.deadline),
+          priority: item.priority,
+          status: item.status,
+          created_at: new Date(item.created_at),
+          files: item.files || [],
+          invoicePrice: Number.parseFloat(item.invoice_price),
+          added_to_invoice_at: item.added_to_invoice_at ? new Date(item.added_to_invoice_at) : undefined,
+        }
+
+        if (groupedData[item.brand]) {
+          groupedData[item.brand].push(project)
+        }
+      })
+
+      return groupedData
+    } catch (error) {
+      console.error("Error loading invoice data from database:", error)
+      return {
+        "Wami Live": [],
+        "Luck On Fourth": [],
+        "The Hideout": [],
+      }
+    }
+  }
+
+  const saveExportedInvoicesToDatabase = async (exportedData: { [brand: string]: any[] }) => {
+    try {
+      // Clear existing exported invoices
+      await supabase.from("exported_invoices").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+
+      // Insert new exported invoices
+      const allInvoices = Object.entries(exportedData).flatMap(([brand, invoices]) =>
+        invoices.map((invoice) => ({
+          brand,
+          invoice_number: invoice.invoiceNumber,
+          file_name: invoice.fileName,
+          total_amount: invoice.totalAmount,
+          exported_at: invoice.exportedAt.toISOString(),
+          is_paid: invoice.isPaid,
+          projects: invoice.projects,
+        })),
+      )
+
+      if (allInvoices.length > 0) {
+        const { error } = await supabase.from("exported_invoices").insert(allInvoices)
+        if (error) {
+          console.error("Error saving exported invoices to database:", error)
+          throw error
+        }
+      }
+    } catch (error) {
+      console.error("Error saving exported invoices to database:", error)
+      toast.error("Failed to save exported invoices to database")
+    }
+  }
+
+  const loadExportedInvoicesFromDatabase = async (): Promise<{ [brand: string]: any[] }> => {
+    try {
+      const { data, error } = await supabase
+        .from("exported_invoices")
+        .select("*")
+        .order("exported_at", { ascending: false })
+
+      if (error) {
+        console.error("Error loading exported invoices from database:", error)
+        return {
+          "Wami Live": [],
+          "Luck On Fourth": [],
+          "The Hideout": [],
+        }
+      }
+
+      const groupedData: { [brand: string]: any[] } = {
+        "Wami Live": [],
+        "Luck On Fourth": [],
+        "The Hideout": [],
+      }
+
+      data?.forEach((item: any) => {
+        const invoice = {
+          id: item.id,
+          invoiceNumber: item.invoice_number,
+          fileName: item.file_name,
+          totalAmount: Number.parseFloat(item.total_amount),
+          exportedAt: new Date(item.exported_at),
+          isPaid: item.is_paid,
+          projects: item.projects,
+        }
+
+        if (groupedData[item.brand]) {
+          groupedData[item.brand].push(invoice)
+        }
+      })
+
+      return groupedData
+    } catch (error) {
+      console.error("Error loading exported invoices from database:", error)
+      return {
+        "Wami Live": [],
+        "Luck On Fourth": [],
+        "The Hideout": [],
+      }
+    }
+  }
 
   const [projectToDelete, setProjectToDelete] = useState<{
     brand: string
@@ -366,44 +536,82 @@ export default function ProjectManagementDashboard() {
     count: 0,
   })
 
-  const [invoiceNumbers, setInvoiceNumbers] = useState<{ [brand: string]: number }>({
-    "Wami Live": 1000,
-    "Luck On Fourth": 2000,
-    "The Hideout": 3000,
-  })
-
-  // Load all data on mount
+  // Load projects from Supabase on mount
   useEffect(() => {
-    loadAllData()
+    const loadData = async () => {
+      await loadProjects()
+
+      // Load invoice data from database
+      const savedInvoiceProjects = await loadInvoiceDataFromDatabase()
+      setInvoiceProjects(savedInvoiceProjects)
+
+      const savedExportedInvoices = await loadExportedInvoicesFromDatabase()
+      setExportedInvoices(savedExportedInvoices)
+    }
+
+    loadData()
   }, [])
 
-  const loadAllData = async () => {
+  const ensureTableExists = async () => {
     try {
-      console.log("🔄 Starting comprehensive data load...")
-      setLoading(true)
+      // First, try to create the table if it doesn't exist
+      const { error: createError } = await supabase.rpc("create_projects_table_if_not_exists")
 
-      // Load data in sequence with comprehensive error handling
-      await loadProjects()
-      await loadInvoiceProjects()
-      await loadExportedInvoices()
-      await loadInvoiceNumbers()
+      if (createError) {
+        // If the RPC doesn't exist, create the table directly
+        const { error: tableError } = await supabase.from("projects").select("id").limit(1)
 
-      console.log("✅ All data loaded successfully")
+        if (tableError && tableError.message.includes("does not exist")) {
+          // Table doesn't exist, let's create it using a direct SQL query
+          const createTableSQL = `
+            CREATE TABLE IF NOT EXISTS projects (
+              id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+              title TEXT NOT NULL,
+              brand TEXT NOT NULL,
+              type TEXT NOT NULL,
+              description TEXT NOT NULL,
+              deadline TIMESTAMP WITH TIME ZONE NOT NULL,
+              priority INTEGER NOT NULL DEFAULT 1,
+              status TEXT NOT NULL DEFAULT 'Pending',
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+              files JSONB DEFAULT '[]'::jsonb
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_projects_priority ON projects(priority);
+            CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+            CREATE INDEX IF NOT EXISTS idx_projects_created_at ON projects(created_at);
+            
+            ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+            
+            CREATE POLICY IF NOT EXISTS "Allow all operations on projects" ON projects
+              FOR ALL USING (true);
+          `
+
+          const { error: sqlError } = await supabase.rpc("exec_sql", { sql: createTableSQL })
+
+          if (sqlError) {
+            console.error("Error creating table:", sqlError)
+            throw new Error("Failed to create projects table. Please run the setup script manually.")
+          }
+        }
+      }
     } catch (error) {
-      console.error("❌ Critical error loading application data:", error)
-      toast.error("Failed to load application data. Please refresh the page.")
-    } finally {
-      setLoading(false)
+      console.error("Error ensuring table exists:", error)
+      throw error
     }
   }
 
   const loadProjects = async () => {
     try {
-      console.log("📋 Loading projects from database...")
+      setLoading(true)
+
+      // First ensure the table exists
+      await ensureTableExists()
+
       const { data, error } = await supabase.from("projects").select("*").order("priority", { ascending: true })
 
       if (error) {
-        console.error("❌ Database error loading projects:", error)
+        console.error("Error loading projects:", error)
         toast.error("Failed to load projects: " + error.message)
         return
       }
@@ -415,184 +623,32 @@ export default function ProjectManagementDashboard() {
         files: p.files || [],
       }))
 
-      console.log(`✅ Successfully loaded ${formattedProjects.length} projects`)
       setProjects(formattedProjects)
     } catch (error) {
-      console.error("❌ Exception loading projects:", error)
-      toast.error("Failed to load projects")
-    }
-  }
+      console.error("Error loading projects:", error)
+      toast.error("Failed to load projects. Please check your database setup.")
 
-  const loadInvoiceProjects = async () => {
-    try {
-      console.log("💰 Loading invoice projects from database...")
-
-      // First, verify the table exists and get count
-      const { count, error: countError } = await supabase
-        .from("invoice_projects")
-        .select("*", { count: "exact", head: true })
-
-      if (countError) {
-        console.error("❌ Error checking invoice_projects table:", countError)
-        toast.error("Invoice projects table error: " + countError.message)
-        return
+      // Fallback to localStorage if database fails
+      const savedProjects = localStorage.getItem("projects")
+      if (savedProjects) {
+        try {
+          const parsed = JSON.parse(savedProjects)
+          const projectsWithDefaults = parsed.map((p: any) => ({
+            ...p,
+            deadline: new Date(p.deadline),
+            created_at: new Date(p.created_at),
+            files: p.files || [],
+            priority: p.priority || 1,
+          }))
+          projectsWithDefaults.sort((a, b) => a.priority - b.priority)
+          setProjects(projectsWithDefaults)
+          toast.success("Loaded projects from local storage")
+        } catch (parseError) {
+          console.error("Error parsing localStorage:", parseError)
+        }
       }
-
-      console.log(`📊 Found ${count} invoice projects in database`)
-
-      const { data, error } = await supabase
-        .from("invoice_projects")
-        .select("*")
-        .order("added_to_invoice_at", { ascending: false })
-
-      if (error) {
-        console.error("❌ Database error loading invoice projects:", error)
-        toast.error("Failed to load invoice projects: " + error.message)
-        return
-      }
-
-      console.log("📊 Raw invoice projects data from database:", data)
-
-      const formattedData: { [brand: string]: InvoiceProject[] } = {
-        "Wami Live": [],
-        "Luck On Fourth": [],
-        "The Hideout": [],
-      }
-
-      if (data && data.length > 0) {
-        data.forEach((item: any) => {
-          try {
-            const invoiceProject: InvoiceProject = {
-              id: item.project_id, // Use project_id as the main ID
-              title: item.title,
-              brand: item.brand as Brand,
-              type: item.type as ProjectType,
-              description: item.description,
-              deadline: new Date(item.deadline),
-              priority: item.priority,
-              status: item.status as Status,
-              created_at: new Date(item.created_at),
-              files: item.files || [],
-              invoicePrice: Number.parseFloat(item.invoice_price.toString()),
-              addedToInvoiceAt: new Date(item.added_to_invoice_at),
-            }
-
-            if (formattedData[item.brand]) {
-              formattedData[item.brand].push(invoiceProject)
-              console.log(`✅ Added invoice project "${item.title}" to ${item.brand}`)
-            } else {
-              console.warn(`⚠️ Unknown brand in invoice projects: ${item.brand}`)
-            }
-          } catch (itemError) {
-            console.error("❌ Error processing invoice project item:", itemError, item)
-          }
-        })
-      }
-
-      console.log("✅ Final formatted invoice projects:", formattedData)
-
-      // Log summary for each brand
-      Object.entries(formattedData).forEach(([brand, projects]) => {
-        console.log(
-          `📊 ${brand}: ${projects.length} invoice projects, total: $${projects.reduce((sum, p) => sum + (p.invoicePrice || 0), 0).toFixed(2)}`,
-        )
-      })
-
-      setInvoiceProjects(formattedData)
-    } catch (error) {
-      console.error("❌ Exception loading invoice projects:", error)
-      toast.error("Failed to load invoice projects")
-    }
-  }
-
-  const loadExportedInvoices = async () => {
-    try {
-      console.log("📄 Loading exported invoices from database...")
-      const { data, error } = await supabase
-        .from("exported_invoices")
-        .select("*")
-        .order("exported_at", { ascending: false })
-
-      if (error) {
-        console.error("❌ Database error loading exported invoices:", error)
-        toast.error("Failed to load exported invoices: " + error.message)
-        return
-      }
-
-      console.log(`📊 Raw exported invoices data: ${data?.length || 0} records`)
-
-      const formattedData: { [brand: string]: ExportedInvoice[] } = {
-        "Wami Live": [],
-        "Luck On Fourth": [],
-        "The Hideout": [],
-      }
-
-      if (data && data.length > 0) {
-        data.forEach((item: any) => {
-          try {
-            const exportedInvoice: ExportedInvoice = {
-              id: item.id,
-              invoiceNumber: item.invoice_number,
-              brand: item.brand as Brand,
-              fileName: item.file_name,
-              totalAmount: Number.parseFloat(item.total_amount.toString()),
-              exportedAt: new Date(item.exported_at),
-              isPaid: item.is_paid,
-              projects: (item.projects || []).map((p: any) => ({
-                ...p,
-                deadline: new Date(p.deadline),
-                created_at: new Date(p.created_at),
-                addedToInvoiceAt: p.addedToInvoiceAt ? new Date(p.addedToInvoiceAt) : undefined,
-              })),
-            }
-
-            if (formattedData[item.brand]) {
-              formattedData[item.brand].push(exportedInvoice)
-            } else {
-              console.warn(`⚠️ Unknown brand in exported invoices: ${item.brand}`)
-            }
-          } catch (itemError) {
-            console.error("❌ Error processing exported invoice item:", itemError, item)
-          }
-        })
-      }
-
-      console.log("✅ Exported invoices loaded successfully")
-      setExportedInvoices(formattedData)
-    } catch (error) {
-      console.error("❌ Exception loading exported invoices:", error)
-      toast.error("Failed to load exported invoices")
-    }
-  }
-
-  const loadInvoiceNumbers = async () => {
-    try {
-      console.log("🔢 Loading invoice numbers from database...")
-      const { data, error } = await supabase.from("invoice_numbers").select("*")
-
-      if (error) {
-        console.error("❌ Database error loading invoice numbers:", error)
-        toast.error("Failed to load invoice numbers: " + error.message)
-        return
-      }
-
-      const numbers: { [brand: string]: number } = {
-        "Wami Live": 1000,
-        "Luck On Fourth": 2000,
-        "The Hideout": 3000,
-      }
-
-      if (data && data.length > 0) {
-        data.forEach((item: any) => {
-          numbers[item.brand] = item.next_number
-        })
-      }
-
-      console.log("✅ Invoice numbers loaded:", numbers)
-      setInvoiceNumbers(numbers)
-    } catch (error) {
-      console.error("❌ Exception loading invoice numbers:", error)
-      toast.error("Failed to load invoice numbers")
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -766,115 +822,48 @@ export default function ProjectManagementDashboard() {
     }
 
     try {
-      console.log("💰 CRITICAL: Starting project completion process...")
-      console.log("💰 Project ID:", priceDialog.project.id)
-      console.log("💰 Invoice Price:", invoicePrice)
-      console.log("💰 Project Brand:", priceDialog.project.brand)
+      // Update project status to completed
+      const { error } = await supabase.from("projects").update({ status: "Completed" }).eq("id", priceDialog.project.id)
 
-      // STEP 1: Update project status to completed in projects table
-      console.log("🔄 STEP 1: Updating project status to completed...")
-      const { error: projectError } = await supabase
-        .from("projects")
-        .update({ status: "Completed" })
-        .eq("id", priceDialog.project.id)
-
-      if (projectError) {
-        console.error("❌ STEP 1 FAILED: Error updating project status:", projectError)
-        toast.error("Failed to update project status: " + projectError.message)
+      if (error) {
+        console.error("Error updating status:", error)
+        toast.error("Failed to update status")
         return
       }
 
-      console.log("✅ STEP 1 SUCCESS: Project status updated to completed")
-
-      // STEP 2: Add project to invoice_projects table (this is the CRITICAL step for persistence)
-      console.log("🔄 STEP 2: Adding project to invoice_projects table...")
-      const invoiceProjectData = {
-        project_id: priceDialog.project.id, // This is the key for persistence
-        title: priceDialog.project.title,
-        brand: priceDialog.project.brand,
-        type: priceDialog.project.type,
-        description: priceDialog.project.description,
-        deadline: priceDialog.project.deadline.toISOString(),
-        priority: priceDialog.project.priority,
+      // Update project with invoice price
+      const updatedProject: InvoiceProject = {
+        ...priceDialog.project,
         status: "Completed",
-        created_at: priceDialog.project.created_at.toISOString(),
-        files: priceDialog.project.files,
-        invoice_price: invoicePrice,
+        invoicePrice,
+        addedToInvoiceAt: new Date(),
       }
 
-      console.log("📝 STEP 2: Invoice project data to insert:", invoiceProjectData)
-
-      // First check if project already exists in invoice_projects
-      const { data: existingProject, error: checkError } = await supabase
-        .from("invoice_projects")
-        .select("id")
-        .eq("project_id", priceDialog.project.id)
-        .single()
-
-      if (checkError && checkError.code !== "PGRST116") {
-        // PGRST116 = no rows found
-        console.error("❌ STEP 2 FAILED: Error checking existing project:", checkError)
-        toast.error("Failed to check existing project: " + checkError.message)
-        return
+      // Add to invoice projects for the brand and save to localStorage
+      const newInvoiceProjects = {
+        ...invoiceProjects,
+        [priceDialog.project.brand]: [...invoiceProjects[priceDialog.project.brand], updatedProject],
       }
 
-      let insertedData
-      if (existingProject) {
-        // Update existing record
-        console.log("🔄 Project already exists in invoice, updating...")
-        const { data, error: updateError } = await supabase
-          .from("invoice_projects")
-          .update(invoiceProjectData)
-          .eq("project_id", priceDialog.project.id)
-          .select()
+      setInvoiceProjects(newInvoiceProjects)
+      await saveInvoiceDataToDatabase(newInvoiceProjects)
 
-        if (updateError) {
-          console.error("❌ STEP 2 FAILED: Error updating invoice project:", updateError)
-          toast.error("Failed to update invoice project: " + updateError.message)
-          return
-        }
-        insertedData = data
-      } else {
-        // Insert new record
-        console.log("🔄 Inserting new project to invoice...")
-        const { data, error: insertError } = await supabase
-          .from("invoice_projects")
-          .insert([invoiceProjectData])
-          .select()
-
-        if (insertError) {
-          console.error("❌ STEP 2 FAILED: Error adding to invoice projects:", insertError)
-          toast.error("Failed to add to invoice: " + insertError.message)
-          return
-        }
-        insertedData = data
-      }
-
-      console.log("✅ STEP 2 SUCCESS: Project added to invoice_projects table:", insertedData)
-
-      // STEP 3: Update local state immediately for UI responsiveness
-      console.log("🔄 STEP 3: Updating local state...")
+      // Update local state
       setProjects((prev) => prev.map((p) => (p.id === priceDialog.project!.id ? { ...p, status: "Completed" } : p)))
 
-      // STEP 4: Force reload invoice projects to ensure data consistency
-      console.log("🔄 STEP 4: Force reloading invoice projects from database...")
-      await loadInvoiceProjects()
-
-      // STEP 5: Close dialog and show success
+      // Close dialog and reset
       setPriceDialog({
         isOpen: false,
         project: null,
         price: "",
       })
 
-      console.log("✅ CRITICAL SUCCESS: Project completion process finished successfully")
-      toast.success(`Project completed and added to ${priceDialog.project.brand} invoice ($${invoicePrice})`)
-
-      // Optional: Switch to invoices tab to show the result immediately
-      setActiveTab("invoices")
+      toast.success(
+        `Project completed and added to ${priceDialog.project.brand} invoice ($${invoicePrice}) - Data saved!`,
+      )
     } catch (error) {
-      console.error("❌ CRITICAL FAILURE: Error in project completion process:", error)
-      toast.error("Failed to complete project: " + (error as Error).message)
+      console.error("Error updating status:", error)
+      toast.error("Failed to update status")
     }
   }
 
@@ -891,7 +880,6 @@ export default function ProjectManagementDashboard() {
   }
 
   const handleDeleteInvoiceProject = (brand: string, projectId: string, projectTitle: string) => {
-    console.log("🗑️ Preparing to delete invoice project:", { brand, projectId, projectTitle })
     setClearDialog({
       isOpen: true,
       type: "completed",
@@ -943,58 +931,38 @@ export default function ProjectManagementDashboard() {
   const confirmClearCompleted = async () => {
     if (clearDialog.type === "invoice" && clearDialog.brand) {
       // Handle invoice history clearing
-      try {
-        console.log("🗑️ Clearing invoice history for brand:", clearDialog.brand)
-        const { error } = await supabase.from("exported_invoices").delete().eq("brand", clearDialog.brand)
-
-        if (error) {
-          console.error("❌ Error clearing invoice history:", error)
-          toast.error("Failed to clear invoice history: " + error.message)
-          return
-        }
-
-        await loadExportedInvoices()
-        toast.success(`Cleared ${clearDialog.count} invoices from ${clearDialog.brand} history`)
-      } catch (error) {
-        console.error("❌ Error clearing invoice history:", error)
-        toast.error("Failed to clear invoice history")
+      const newExportedInvoices = {
+        ...exportedInvoices,
+        [clearDialog.brand]: [],
       }
 
+      setExportedInvoices(newExportedInvoices)
+      await saveExportedInvoicesToDatabase(newExportedInvoices)
+
+      toast.success(`Cleared ${clearDialog.count} invoices from ${clearDialog.brand} history`)
       setClearDialog({ isOpen: false, type: "completed", count: 0 })
       return
     }
 
-    // Handle invoice project deletion (CRITICAL: This mirrors the same deletion logic used in invoice export)
+    // Handle invoice project deletion
     if (projectToDelete) {
-      try {
-        console.log("🗑️ CRITICAL: Deleting invoice project using same method as export...")
-        console.log("🗑️ Project to delete:", projectToDelete)
-
-        // Use the EXACT same deletion method as in the invoice export process
-        const { error } = await supabase.from("invoice_projects").delete().eq("project_id", projectToDelete.projectId)
-
-        if (error) {
-          console.error("❌ CRITICAL: Error removing from invoice:", error)
-          toast.error("Failed to remove from invoice: " + error.message)
-          return
-        }
-
-        console.log("✅ CRITICAL: Successfully removed from invoice using same method")
-
-        // Force reload invoice projects to ensure UI consistency
-        await loadInvoiceProjects()
-        toast.success("Project removed from invoice")
-      } catch (error) {
-        console.error("❌ CRITICAL: Exception removing from invoice:", error)
-        toast.error("Failed to remove from invoice")
+      const newInvoiceProjects = {
+        ...invoiceProjects,
+        [projectToDelete.brand]: invoiceProjects[projectToDelete.brand].filter(
+          (p) => p.id !== projectToDelete.projectId,
+        ),
       }
 
+      setInvoiceProjects(newInvoiceProjects)
+      await saveInvoiceDataToDatabase(newInvoiceProjects)
+
+      toast.success("Project removed from invoice")
       setClearDialog({ isOpen: false, type: "completed", count: 0 })
       setProjectToDelete(null)
       return
     }
 
-    // Handle single project deletion from main projects list
+    // Rest of the existing logic remains the same...
     if (clearDialog.brand && clearDialog.brand.includes('Delete "')) {
       const projectToDelete = projects.find((p) => clearDialog.brand?.includes(p.title))
       if (projectToDelete) {
@@ -1119,7 +1087,7 @@ export default function ProjectManagementDashboard() {
             <span className="text-base sm:text-lg">Loading projects...</span>
           </div>
           <p className="text-sm text-gray-500 max-w-md">
-            Loading all project data including invoice information. This may take a moment.
+            If this is your first time, we're setting up your database. This may take a moment.
           </p>
         </div>
       </div>
@@ -1229,9 +1197,6 @@ export default function ProjectManagementDashboard() {
           exportedInvoices={exportedInvoices}
           setExportedInvoices={setExportedInvoices}
           onDeleteProject={handleDeleteInvoiceProject}
-          invoiceNumbers={invoiceNumbers}
-          setInvoiceNumbers={setInvoiceNumbers}
-          onReloadData={loadAllData}
         />
       ) : (
         <div className="container mx-auto px-4 py-4 sm:py-6 md:py-8 space-y-6 sm:space-y-8 md:space-y-12">
@@ -1803,158 +1768,16 @@ export default function ProjectManagementDashboard() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium truncate">{file.name}</p>
-                            <p className="text-xs text-gray-500">
-                              {(file.size / 1024 / 1024).toFixed(2)} MB • {format(file.uploadedAt, "MMM dd, yyyy")}
-                            </p>
+                            <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => window.open(file.url, "_blank")}
-                            className="shrink-0 h-8 w-8 p-0"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Button>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-
-                {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t">
-                  <Button
-                    onClick={() => {
-                      handleEdit(selectedProject)
-                      setSelectedProject(null)
-                    }}
-                    className="flex-1"
-                  >
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit Project
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      handleStatusChange(
-                        selectedProject.id,
-                        selectedProject.status === "Completed" ? "In Progress" : "Completed",
-                      )
-                    }}
-                    className="flex-1"
-                  >
-                    {selectedProject.status === "Completed" ? "Mark In Progress" : "Mark Complete"}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => {
-                      handleDelete(selectedProject.id)
-                      setSelectedProject(null)
-                    }}
-                    className="flex-1"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </div>
               </div>
             </>
           )}
-        </DialogContent>
-      </Dialog>
-      {/* Price Input Dialog */}
-      <Dialog
-        open={priceDialog.isOpen}
-        onOpenChange={(open) => !open && setPriceDialog({ isOpen: false, project: null, price: "" })}
-      >
-        <DialogContent className="max-w-md mx-4">
-          <DialogHeader>
-            <DialogTitle>Set Invoice Price</DialogTitle>
-            <DialogDescription>Enter the invoice price for "{priceDialog.project?.title}"</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 mt-6">
-            <div className="space-y-2">
-              <Label htmlFor="invoice-price">Invoice Price ($)</Label>
-              <Input
-                id="invoice-price"
-                type="number"
-                step="0.01"
-                min="0"
-                value={priceDialog.price}
-                onChange={(e) => setPriceDialog((prev) => ({ ...prev, price: e.target.value }))}
-                placeholder="0.00"
-                className="text-lg"
-                autoFocus
-              />
-            </div>
-
-            <div className="flex gap-3 pt-4">
-              <Button
-                onClick={handlePriceSubmit}
-                disabled={!priceDialog.price || Number.parseFloat(priceDialog.price) <= 0}
-                className="flex-1"
-              >
-                Complete Project
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setPriceDialog({ isOpen: false, project: null, price: "" })}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      {/* Clear Confirmation Dialog */}
-      <Dialog
-        open={clearDialog.isOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setClearDialog({ isOpen: false, type: "completed", count: 0 })
-            setProjectToDelete(null)
-          }
-        }}
-      >
-        <DialogContent className="max-w-md mx-4">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="h-5 w-5" />
-              Confirm Action
-            </DialogTitle>
-            <DialogDescription>
-              {clearDialog.brand
-                ? `Are you sure you want to delete this project? This action cannot be undone.`
-                : clearDialog.type === "completed"
-                  ? `Are you sure you want to permanently delete ${clearDialog.count} completed projects from the database? This will free up database space but will NOT affect your invoice data.`
-                  : `Are you sure you want to clear ${clearDialog.count} invoices from invoice history? This cannot be undone.`}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex gap-3 pt-4">
-            <Button
-              variant="destructive"
-              onClick={() => {
-                confirmClearCompleted()
-              }}
-              className="flex-1"
-            >
-              {clearDialog.brand && clearDialog.brand.includes('Remove "')
-                ? "Remove from Invoice"
-                : clearDialog.brand && clearDialog.brand.includes('Delete "')
-                  ? "Delete Project"
-                  : `Clear ${clearDialog.count} Items`}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setClearDialog({ isOpen: false, type: "completed", count: 0 })}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
     </div>
